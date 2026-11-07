@@ -14,6 +14,7 @@ export type UpdateMetrics = {
   inProgress: number
   notStarted: number
   plannedFinish: number
+  hasPlannedDates: boolean
   forecastFinish: number
   finishVarianceDays: number
   criticalCount: number
@@ -109,8 +110,10 @@ export function computeMetrics(s: Schedule, prev: Schedule | null): UpdateMetric
   const negative = open.filter((a) => (float.get(a.id) ?? 0) < 0)
 
   const finishes = acts.map((a) => a.actualFinish ?? a.earlyFinish ?? a.targetFinish ?? 0)
-  const forecastFinish = cpmFinish ?? s.scheduledFinish ?? Math.max(...finishes)
-  const plannedFinish = Math.max(...acts.map((a) => a.targetFinish ?? 0))
+  const forecastFinish = cpmFinish ?? s.scheduledFinish ?? finishes.reduce((x, y) => Math.max(x, y), 0)
+  const targets = acts.map((a) => a.targetFinish).filter((t): t is number => t !== null)
+  const hasPlannedDates = targets.length > 0
+  const plannedFinish = hasPlannedDates ? targets.reduce((x, y) => Math.max(x, y), 0) : forecastFinish
 
   const periodStart = prev ? prev.dataDate : null
   const inPeriod = (t: number | null) =>
@@ -127,6 +130,7 @@ export function computeMetrics(s: Schedule, prev: Schedule | null): UpdateMetric
     inProgress: open.filter((a) => a.status === 'in_progress').length,
     notStarted: open.filter((a) => a.status === 'not_started').length,
     plannedFinish,
+    hasPlannedDates,
     forecastFinish,
     finishVarianceDays: Math.round((forecastFinish - plannedFinish) / DAY_MS),
     criticalCount: critical.length,

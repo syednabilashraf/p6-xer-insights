@@ -51,24 +51,21 @@ export function parseXer(text: string): XerFile {
         throw new XerFormatError(`Line ${i + 1}: data row before the table's field list.`)
       }
       const values = line.slice(3).split('\t')
-      if (values.length !== current.fields.length) {
+      if (values.length > current.fields.length) {
         warnings.push(
-          `${current.name} line ${i + 1}: expected ${current.fields.length} values, found ${values.length}.`,
+          `${current.name} line ${i + 1}: ${values.length} values for ${current.fields.length} fields; the extra values were ignored.`,
         )
       }
       const row: XerRow = {}
       for (let f = 0; f < current.fields.length; f++) row[current.fields[f]] = values[f] ?? ''
       current.rows.push(row)
     } else if (tag === '%E') {
-      break
+      current = null
     }
   }
 
   if (!tables.has('TASK')) {
     throw new XerFormatError('The file has no TASK table, so there are no activities to analyse.')
-  }
-  if (!tables.has('PROJECT')) {
-    throw new XerFormatError('The file has no PROJECT table.')
   }
   return { header, tables, warnings }
 }

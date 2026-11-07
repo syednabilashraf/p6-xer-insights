@@ -17,5 +17,5 @@ export function loadXer(text: string, name: string): Loaded {
     const code = new Map(schedule.activities.map((a) => [a.id, a.code]))
     throw new CircularLogicError(loop.map((id) => code.get(id) ?? id))
   }
-  return { name, schedule, warnings: xer.warnings }
+  return { name, schedule, warnings: [...xer.warnings, ...schedule.warnings] }
 }

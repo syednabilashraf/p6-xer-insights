@@ -131,6 +131,15 @@ function Report({ a, loaded, parseMs }: { a: Analysis; loaded: Loaded[]; parseMs
 
   return (
     <>
+      {loaded.some((l) => l.warnings.length > 0) && (
+        <div className="warnings">
+          <strong>Data warnings</strong>
+          <ul>
+            {loaded.flatMap((l) => l.warnings.slice(0, 6).map((w, i) => <li key={`${l.name}-${i}`}>{l.name}: {w}</li>))}
+          </ul>
+        </div>
+      )}
+
       <section className="meta">
         <strong>{m.projectName}</strong>
         {a.metrics.map((x, i) => (
@@ -144,7 +153,7 @@ function Report({ a, loaded, parseMs }: { a: Analysis; loaded: Loaded[]; parseMs
       </section>
 
       <section className="kpis">
-        <Kpi label="Forecast finish" value={fmtDate(m.forecastFinish)} sub={`${signed(m.finishVarianceDays)} days vs planned ${fmtDate(m.plannedFinish)}`} tone={m.finishVarianceDays > 0 ? 'bad' : 'good'} />
+        <Kpi label="Forecast finish" value={fmtDate(m.forecastFinish)} sub={m.hasPlannedDates ? `${signed(m.finishVarianceDays)} days vs planned ${fmtDate(m.plannedFinish)}` : 'no planned dates in the file'} tone={m.finishVarianceDays > 0 ? 'bad' : 'good'} />
         <Kpi label="Movement since last update" value={c ? `${signed(c.finishMovementDays)} days` : '—'} sub={prev ? `since ${fmtDate(prev.dataDate)}` : 'needs two updates'} tone={c && c.finishMovementDays > 0 ? 'bad' : 'good'} />
         <Kpi label="Critical / near-critical" value={`${m.criticalCount} / ${m.nearCriticalCount}`} sub="open activities with ≤ 0 / ≤ 10 days float" />
         <Kpi label="Progress" value={`${m.pctActual}%`} sub={`vs ${m.pctPlanned}% planned`} tone={m.pctActual < m.pctPlanned ? 'bad' : 'good'} />

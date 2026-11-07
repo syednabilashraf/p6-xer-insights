@@ -38,6 +38,7 @@ export type Schedule = {
   scheduledFinish: number | null
   activities: Activity[]
   relationships: Relationship[]
+  warnings: string[]
 }
 
 export const HOURS_PER_DAY = 8
@@ -89,46 +90,81 @@ function rows(xer: XerFile, table: string): XerRow[] {
 }
 
 export function toSchedule(xer: XerFile): Schedule {
-  const projects = rows(xer, 'PROJECT')
-  if (projects.length === 0) throw new XerFormatError('The PROJECT table is empty.')
-  const project = projects[0]
+  const warnings: string[] = []
+  const project: XerRow = rows(xer, 'PROJECT')[0] ?? {}
+  if (!xer.tables.has('PROJECT')) warnings.push('The file has no PROJECT table, so the data date comes from the latest actual date (or the export date).')
   const projId = project.proj_id
-  const dataDate = parseP6Date(project.last_recalc_date) ?? parseP6Date(project.plan_start_date)
-  if (dataDate === null) throw new XerFormatError('The project has no data date (last_recalc_date).')
 
   const wbsNames = new Map(rows(xer, 'PROJWBS').map((w) => [w.wbs_id, w.wbs_name]))
 
+  const unknownTypes = new Set<string>()
   const activities: Activity[] = rows(xer, 'TASK')
     .filter((t) => !projId || !t.proj_id || t.proj_id === projId)
-    .map((t) => ({
+    .map((t) => {
+      if (t.task_type && !TYPE_MAP[t.task_type]) unknownTypes.add(`${t.task_code} (${t.task_type})`)
+      const actualStart = parseP6Date(t.act_start_date)
+      const actualFinish = parseP6Date(t.act_end_date)
+      const status: ActivityStatus =
+        STATUS_MAP[t.status_code] ?? (actualFinish ? 'complete' : actualStart ? 'in_progress' : 'not_started')
+      const originalHours = num(t.target_drtn_hr_cnt)
+      const remainingHours = num(t.remain_drtn_hr_cnt)
+      const pctField = nullableNum(t.phys_complete_pct)
+      const pctComplete =
+        pctField ?? (status === 'complete' ? 100 : status === 'in_progress' && originalHours > 0 ? Math.max(0, Math.min(100, ((originalHours - remainingHours) / originalHours) * 100)) : 0)
+      return {
       id: t.task_id,
       code: t.task_code,
       name: t.task_name,
       wbs: wbsNames.get(t.wbs_id) ?? '',
       type: TYPE_MAP[t.task_type] ?? 'task',
-      status: STATUS_MAP[t.status_code] ?? 'not_started',
-      originalHours: num(t.target_drtn_hr_cnt),
-      remainingHours: num(t.remain_drtn_hr_cnt),
-      pctComplete: num(t.phys_complete_pct),
+      status,
+      originalHours,
+      remainingHours,
+      pctComplete,
       totalFloatHours: nullableNum(t.total_float_hr_cnt),
       targetStart: parseP6Date(t.target_start_date),
       targetFinish: parseP6Date(t.target_end_date),
       earlyStart: parseP6Date(t.early_start_date),
       earlyFinish: parseP6Date(t.early_end_date),
-      actualStart: parseP6Date(t.act_start_date),
-      actualFinish: parseP6Date(t.act_end_date),
+      actualStart,
+      actualFinish,
       constraint: t.cstr_type ?? '',
-    }))
+      }
+    })
+  if (unknownTypes.size) {
+    warnings.push(`Unknown activity type, treated as a task: ${[...unknownTypes].slice(0, 5).join(', ')}.`)
+  }
 
   const ids = new Set(activities.map((a) => a.id))
-  const relationships: Relationship[] = rows(xer, 'TASKPRED')
-    .filter((r) => ids.has(r.task_id) && ids.has(r.pred_task_id))
-    .map((r) => ({
+  const codeOf = new Map(activities.map((a) => [a.id, a.code]))
+  const relationships: Relationship[] = []
+  for (const r of rows(xer, 'TASKPRED')) {
+    if (!ids.has(r.task_id) || !ids.has(r.pred_task_id)) {
+      const missing = ids.has(r.task_id) ? r.pred_task_id : r.task_id
+      const other = codeOf.get(ids.has(r.task_id) ? r.task_id : r.pred_task_id)
+      warnings.push(`A relationship${other ? ` on ${other}` : ''} points to activity ${missing}, which isn't in this file; it was ignored.`)
+      continue
+    }
+    const lag = r.lag_hr_cnt ?? ''
+    if (lag.trim() !== '' && !Number.isFinite(parseFloat(lag))) {
+      warnings.push(`The lag "${lag}" on ${codeOf.get(r.pred_task_id)} → ${codeOf.get(r.task_id)} isn't a number; it was read as 0.`)
+    }
+    relationships.push({
       pred: r.pred_task_id,
       succ: r.task_id,
       type: REL_MAP[r.pred_type] ?? 'FS',
-      lagHours: num(r.lag_hr_cnt),
-    }))
+      lagHours: num(lag),
+    })
+  }
+
+  const actuals = activities.flatMap((a) => [a.actualStart ?? 0, a.actualFinish ?? 0])
+  const exportDate = parseP6Date(xer.header[2])
+  const dataDate =
+    parseP6Date(project.last_recalc_date) ??
+    (actuals.some((t) => t > 0) ? Math.max(...actuals) : null) ??
+    exportDate ??
+    parseP6Date(project.plan_start_date)
+  if (dataDate === null) throw new XerFormatError('The file has no data date (PROJECT last_recalc_date) and no actual dates.')
 
   return {
     projectName: project.proj_short_name || 'Project',
@@ -136,5 +172,6 @@ export function toSchedule(xer: XerFile): Schedule {
     scheduledFinish: parseP6Date(project.scd_end_date),
     activities,
     relationships,
+    warnings,
   }
 }

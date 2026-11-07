@@ -24,6 +24,37 @@ describe('parser', () => {
     expect(first.relationships.length).toBeGreaterThan(first.activities.length - 5)
   })
 
+  it('keeps reading after a %E between tables', () => {
+    const text = [
+      'ERMHDR\t8.4\t2026-04-09',
+      '%T\tPROJECT', '%F\tproj_id\tproj_short_name\tlast_recalc_date', '%R\t1\tP\t2026-01-15 12:00', '%E',
+      '%T\tTASK', '%F\ttask_id\tproj_id\ttask_code\ttask_name\ttask_type\tstatus_code\ttarget_drtn_hr_cnt\tremain_drtn_hr_cnt',
+      '%R\t10\t1\tA1\tFirst\tTT_Task\tTK_NotStart\t16\t16', '%R\t11\t1\tA2\tSecond\tTT_Task\tTK_NotStart\t8\t8', '%E',
+      '%T\tTASKPRED', '%F\ttask_pred_id\ttask_id\tpred_task_id\tpred_type\tlag_hr_cnt', '%R\t1\t11\t10\tPR_FS\t0', '%E',
+    ].join('\n')
+    const loaded = loadXer(text, 'per-table-end.xer')
+    expect(loaded.schedule.activities).toHaveLength(2)
+    expect(loaded.schedule.relationships).toHaveLength(1)
+  })
+
+  it('loads a file without a PROJECT table and warns about bad links', () => {
+    const text = [
+      'ERMHDR\t20.12\t2026-05-24',
+      '%T\tTASK', '%F\ttask_id\ttask_code\ttask_name\ttask_type\ttarget_drtn_hr_cnt\tremain_drtn_hr_cnt\tact_start_date',
+      '%R\t1\tX\tOne\tTT_Task\t40\t40\t', '%R\t2\tY\tTwo\tTT_Weird\t40\t40\t',
+      '%T\tTASKPRED', '%F\ttask_pred_id\ttask_id\tpred_task_id\tpred_type\tlag_hr_cnt',
+      '%R\t1\t2\t1\tPR_FS\tNotANumber', '%R\t2\t2\t999\tPR_FS\t0', '%E',
+    ].join('\n')
+    const loaded = loadXer(text, 'no-project.xer')
+    expect(loaded.schedule.relationships).toHaveLength(1)
+    const w = loaded.warnings.join(' ')
+    expect(w).toMatch(/999/)
+    expect(w).toMatch(/NotANumber/)
+    expect(w).toMatch(/TT_Weird/)
+    const a = analyse([loaded.schedule])
+    expect(a.metrics[0].hasPlannedDates).toBe(false)
+  })
+
   it('names the activities in a logic loop', () => {
     try {
       loadXer(circularSample(), 'broken.xer')

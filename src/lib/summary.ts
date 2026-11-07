@@ -20,8 +20,9 @@ export function buildSummary(m: UpdateMetrics, c: Comparison | null, prev: Updat
   const parts: string[] = []
 
   const variance = m.finishVarianceDays
-  const varianceText =
-    variance === 0
+  const varianceText = !m.hasPlannedDates
+    ? 'and the file has no planned (target) dates to compare against'
+    : variance === 0
       ? 'on the planned finish date'
       : `${f('varianceDays', Math.abs(variance))} days ${variance > 0 ? 'later' : 'earlier'} than the planned finish of ${f('plannedFinish', fmtDate(m.plannedFinish))}`
   parts.push(

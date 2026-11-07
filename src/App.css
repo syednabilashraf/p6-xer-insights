@@ -62,3 +62,5 @@ td { border-bottom: 1px solid #f0f2f4; padding: 6px 6px; vertical-align: top; }
 footer { margin-top: 24px; font-size: 13px; color: #5c6775; }
 .upload.primary { background: #0f6b5c; color: #fff; border-color: #0f6b5c; }
 .notice { background: #eef5f3; border: 1px solid #cfe3de; color: #234a43; padding: 10px 14px; border-radius: 10px; margin-bottom: 12px; font-size: 14px; }
+.warnings { background: #fff8e6; border: 1px solid #f0d9a0; color: #6b4b00; padding: 10px 14px; border-radius: 10px; margin-bottom: 12px; font-size: 14px; }
+.warnings ul { margin: 6px 0 0; padding-left: 18px; }
