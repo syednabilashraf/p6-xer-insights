@@ -84,7 +84,7 @@ export default function App() {
       <section className="controls">
         <label className="upload primary">
           Upload your .xer files
-          <input type="file" accept=".xer" multiple onChange={(e) => onFiles(e.target.files)} />
+          <input id="xer-files" name="xer-files" type="file" accept=".xer" multiple aria-label="Upload .xer files" onChange={(e) => onFiles(e.target.files)} />
         </label>
         <button onClick={() => ingest(sampleFiles(), true)}>Show the sample project</button>
         <button onClick={() => ingest([{ name: 'broken-circular-logic.xer', text: circularSample() }])}>
@@ -107,6 +107,7 @@ export default function App() {
       {rejected.map((r) => (
         <div key={r.name} className="rejected">
           <strong>{r.name} was rejected.</strong> {r.reason}
+          {r.reason.endsWith('.') ? '' : '.'}
           {r.reason.startsWith('Circular') ? ' Fix the loop in P6 and export the file again.' : ''}
         </div>
       ))}
@@ -260,7 +261,7 @@ function SummaryPanel({ a }: { a: Analysis }) {
   return (
     <section className="card">
       <h2>Executive summary</h2>
-      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={6} />
+      <textarea id="summary" name="summary" aria-label="Executive summary" value={text} onChange={(e) => setText(e.target.value)} rows={6} />
       {v.unknown.length === 0 ? (
         <p className="verified">✓ All {v.checked} numbers and dates trace back to the computed metrics.</p>
       ) : (

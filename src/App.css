@@ -9,7 +9,9 @@ button, .upload {
 button:hover, .upload:hover { border-color: #0f6b5c; }
 button:disabled { opacity: 0.6; cursor: default; }
 button.primary { background: #0f6b5c; color: #fff; border-color: #0f6b5c; }
-.upload input { display: none; }
+.upload { position: relative; }
+.upload input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.upload:focus-within { outline: 2px solid #0f6b5c; outline-offset: 2px; }
 .hint { font-size: 13px; color: #5c6775; }
 .hint a { margin-left: 8px; }
 .rejected { background: #fdecec; border: 1px solid #f3b8b8; color: #7d1d1d; padding: 12px 14px; border-radius: 10px; margin-bottom: 12px; }
