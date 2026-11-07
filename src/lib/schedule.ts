@@ -61,6 +61,7 @@ const TYPE_MAP: Record<string, ActivityType> = {
   TT_Task: 'task',
   TT_Rsrc: 'task',
   TT_Mile: 'start',
+  TT_StartMile: 'start',
   TT_FinMile: 'finish',
   TT_LOE: 'loe',
   TT_WBS: 'wbs',

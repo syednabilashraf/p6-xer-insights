@@ -57,7 +57,7 @@ export function SCurve({ a }: { a: Analysis }) {
       {a.sCurve.actual.map((p) => (
         <g key={p.t}>
           <circle cx={x(p.t)} cy={y(p.pct)} r={4} className="actual-dot" />
-          <text x={x(p.t) - 6} y={y(p.pct) - 8} className="axis" textAnchor="end">{p.pct}%</text>
+          {p.pct > 0 && <text x={x(p.t) - 6} y={y(p.pct) - 8} className="axis" textAnchor="end">{p.pct}%</text>}
         </g>
       ))}
     </svg>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseXer, XerFormatError } from '../src/lib/xer.ts'
-import { loadXer } from '../src/lib/load.ts'
+import { loadXer, sameProjectOnly } from '../src/lib/load.ts'
 import { CircularLogicError, runCpm } from '../src/lib/cpm.ts'
 import { analyse } from '../src/lib/metrics.ts'
 import { buildSummary, verifySummary } from '../src/lib/summary.ts'
@@ -63,6 +63,16 @@ describe('parser', () => {
       expect(e).toBeInstanceOf(CircularLogicError)
       expect((e as CircularLogicError).loop).toEqual(expect.arrayContaining(['A1200', 'A1210', 'A1220']))
     }
+  })
+})
+
+describe('grouping', () => {
+  it('drops a file from a different project', () => {
+    const updates = midriseUpdates().map((x, i) => loadXer(x, `u${i}.xer`))
+    const other = loadXer(largeSchedule(200), 'other.xer')
+    const g = sameProjectOnly([...updates, other])
+    expect(g.kept.map((k) => k.name)).toEqual(['u0.xer', 'u1.xer', 'u2.xer'])
+    expect(g.dropped[0].name).toBe('other.xer')
   })
 })
 

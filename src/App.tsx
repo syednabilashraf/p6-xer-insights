@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import './App.css'
 import { decodeXer } from './lib/xer.ts'
-import { loadXer } from './lib/load.ts'
+import { loadXer, sameProjectOnly } from './lib/load.ts'
 import type { Loaded } from './lib/load.ts'
 import { analyse } from './lib/metrics.ts'
 import type { Analysis } from './lib/metrics.ts'
@@ -23,23 +23,33 @@ const days = (hours: number) => Math.round(hours / 8)
 const signed = (n: number) => `${n > 0 ? '+' : ''}${n}`
 
 function loadAll(files: { name: string; text: string }[]) {
-  const ok: Loaded[] = []
+  const loaded: Loaded[] = []
   const rejected: Rejected[] = []
-  for (const f of files) {
+  for (const f of files.slice(0, 3)) {
     try {
-      ok.push(loadXer(f.text, f.name))
+      loaded.push(loadXer(f.text, f.name))
     } catch (e) {
       rejected.push({ name: f.name, reason: e instanceof Error ? e.message : String(e) })
     }
   }
-  return { ok, rejected }
+  for (const f of files.slice(3)) {
+    rejected.push({ name: f.name, reason: 'Only three updates can be compared at once, so this file was skipped' })
+  }
+  const { kept, dropped } = sameProjectOnly(loaded)
+  for (const d of dropped) {
+    rejected.push({
+      name: d.name,
+      reason: `Only ${d.matchPct}% of its activity IDs appear in the latest update, so it looks like a different project and wasn't compared`,
+    })
+  }
+  return { ok: kept, rejected }
 }
 
 const sampleFiles = () => midriseUpdates().map((text, i) => ({ name: SAMPLE_FILES[i], text }))
 
 function timedLoad(files: { name: string; text: string }[]) {
   const t0 = performance.now()
-  const result = loadAll(files.slice(0, 3))
+  const result = loadAll(files)
   return { ...result, ms: performance.now() - t0 }
 }
 
@@ -158,7 +168,11 @@ function Report({ a, loaded, parseMs }: { a: Analysis; loaded: Loaded[]; parseMs
         <Kpi label="Movement since last update" value={c ? `${signed(c.finishMovementDays)} days` : '—'} sub={prev ? `since ${fmtDate(prev.dataDate)}` : 'needs two updates'} tone={c && c.finishMovementDays > 0 ? 'bad' : 'good'} />
         <Kpi label="Critical / near-critical" value={`${m.criticalCount} / ${m.nearCriticalCount}`} sub="open activities with ≤ 0 / ≤ 10 days float" />
         <Kpi label="Progress" value={`${m.pctActual}%`} sub={`vs ${m.pctPlanned}% planned`} tone={m.pctActual < m.pctPlanned ? 'bad' : 'good'} />
-        <Kpi label={m.periodStart ? 'Finishes achieved this period' : 'Finishes achieved to date'} value={`${m.finishesAchieved} of ${m.finishesPlanned}`} sub={`starts: ${m.startsAchieved} of ${m.startsPlanned}`} />
+        <Kpi
+          label={m.periodStart ? 'Finishes achieved this period' : 'Finishes achieved to date'}
+          value={m.finishesPlanned ? `${m.finishesAchieved} of ${m.finishesPlanned}` : '—'}
+          sub={m.finishesPlanned || m.startsPlanned ? `starts: ${m.startsAchieved} of ${m.startsPlanned}` : `none planned ${m.periodStart ? 'in this period' : 'by the data date'}`}
+        />
         <Kpi label="Schedule checks" value={`${checksPassed} of ${m.checks.length} pass`} sub="logic, constraints, float, dates" tone={checksPassed === m.checks.length ? 'good' : 'warn'} />
       </section>
 
