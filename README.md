@@ -52,3 +52,4 @@ npm run samples  # regenerate public/samples and print timings
 - The sample schedules are generated (a 42-unit midrise with three monthly updates and a switchgear delay), not real project data.
 - When an export includes P6 total float, the metrics use it. Otherwise the built-in CPM computes float. The CPM works in 8-hour days and ignores calendars, so it's a cross-check rather than a replacement for P6's scheduler.
 - Planned dates come from each activity's target dates.
+- Besides the generated samples, it was checked against public `.xer` files from other projects (MPXJ's and Aspose's test exports, among others), including files with a `%E` after every table, files without a PROJECT table, and deliberately corrupt ones. `npm run check -- <files>` runs that check on any `.xer` files.

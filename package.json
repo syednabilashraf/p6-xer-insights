@@ -9,7 +9,8 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run",
-    "samples": "tsx scripts/generate-samples.ts"
+    "samples": "tsx scripts/generate-samples.ts",
+    "check": "tsx scripts/check-files.ts"
   },
   "dependencies": {
     "react": "^19.3.1",
