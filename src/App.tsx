@@ -17,7 +17,6 @@ const SAMPLE_FILES = [
   'midrise-update-2-2026-05-01.xer',
   'midrise-update-3-2026-05-31.xer',
 ]
-const REPO = 'https://github.com/syednabilashraf/p6-xer-insights'
 
 const days = (hours: number) => Math.round(hours / 8)
 const signed = (n: number) => `${n > 0 ? '+' : ''}${n}`
@@ -134,8 +133,7 @@ export default function App() {
       <Benchmark />
 
       <footer>
-        A sample by Syed Nabil Ashraf. <a href={REPO}>Source on GitHub</a>. The sample schedules are generated, not real
-        project data.
+        A sample by Syed Nabil Ashraf. The sample schedules are generated, not real project data.
       </footer>
     </div>
   )
