@@ -35,6 +35,14 @@ function loadAll(files: { name: string; text: string }[]) {
   for (const f of files.slice(3)) {
     rejected.push({ name: f.name, reason: 'Only three updates can be compared at once, so this file was skipped' })
   }
+  loaded.sort((a, b) => a.schedule.dataDate - b.schedule.dataDate || a.name.localeCompare(b.name))
+  for (let i = 1; i < loaded.length; i++) {
+    if (loaded[i].schedule.dataDate === loaded[i - 1].schedule.dataDate) {
+      loaded[i].warnings.unshift(
+        `It has the same data date as ${loaded[i - 1].name}, so the two are compared in file-name order rather than as consecutive updates.`,
+      )
+    }
+  }
   const { kept, dropped } = sameProjectOnly(loaded)
   for (const d of dropped) {
     rejected.push({

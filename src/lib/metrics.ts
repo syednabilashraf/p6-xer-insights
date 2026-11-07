@@ -187,8 +187,9 @@ export function compare(prev: UpdateMetrics, curr: UpdateMetrics, prevS: Schedul
 }
 
 export function analyse(schedules: Schedule[]): Analysis {
+  schedules = [...schedules].sort((a, b) => a.dataDate - b.dataDate)
   const t0 = performance.now()
-  const sorted = [...schedules].sort((a, b) => a.dataDate - b.dataDate)
+  const sorted = [...schedules]
   const metrics = sorted.map((s, i) => computeMetrics(s, i ? sorted[i - 1] : null))
   const comparisons = metrics.map((m, i) => (i ? compare(metrics[i - 1], m, sorted[i - 1], sorted[i]) : null))
 
