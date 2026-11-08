@@ -5,6 +5,7 @@
 A small working sample of a schedule update review tool for Primavera P6 `.xer` exports. Upload one to three monthly updates and it:
 
 - reads the `.xer` file with plain code (no LLM) and rejects broken files with a clear reason, such as a wrong format or circular logic, naming the activities in the loop
+- only compares files that are updates of the same project: most activity IDs must match the latest update, the matching activities must have the same names (P6's default A1000, A1010… numbering repeats across projects), and actual start dates already recorded must agree. A different project ID alone only gives a warning, because updates saved as copies often get a new one
 - finds the critical and near-critical activities and tracks float between updates
 - shows planned vs actual progress (S-curve), the forecast finish at each update, and planned starts and finishes achieved
 - runs schedule quality checks: missing logic, leads, lags, relationship types, hard constraints, negative and high float, long durations and invalid dates

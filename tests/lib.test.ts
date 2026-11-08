@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { parseXer, XerFormatError } from '../src/lib/xer.ts'
 import { loadXer, sameProjectOnly } from '../src/lib/load.ts'
+import type { Loaded } from '../src/lib/load.ts'
+import { DAY_MS } from '../src/lib/schedule.ts'
+import type { Activity } from '../src/lib/schedule.ts'
 import { CircularLogicError, runCpm } from '../src/lib/cpm.ts'
 import { analyse } from '../src/lib/metrics.ts'
 import { buildSummary, verifySummary } from '../src/lib/summary.ts'
@@ -67,12 +70,57 @@ describe('parser', () => {
 })
 
 describe('grouping', () => {
+  const updates = () => midriseUpdates().map((x, i) => loadXer(x, `u${i}.xer`))
+  const variant = (base: Loaded, name: string, change: (a: Activity) => Activity, projectName = base.schedule.projectName): Loaded => ({
+    ...base,
+    name,
+    schedule: { ...base.schedule, projectName, activities: base.schedule.activities.map(change) },
+  })
+
+  it('keeps the three sample updates without extra warnings', () => {
+    const files = updates()
+    const g = sameProjectOnly(files)
+    expect(g.dropped).toEqual([])
+    expect(g.kept.map((k) => k.warnings)).toEqual(files.map((f) => f.warnings))
+  })
+
   it('drops a file from a different project', () => {
-    const updates = midriseUpdates().map((x, i) => loadXer(x, `u${i}.xer`))
     const other = loadXer(largeSchedule(200), 'other.xer')
-    const g = sameProjectOnly([...updates, other])
+    const g = sameProjectOnly([...updates(), other])
     expect(g.kept.map((k) => k.name)).toEqual(['u0.xer', 'u1.xer', 'u2.xer'])
     expect(g.dropped[0].name).toBe('other.xer')
+    expect(g.dropped[0].reason).toMatch(/activity IDs/)
+  })
+
+  it('drops a different project that reuses the same activity IDs', () => {
+    const [u0, , u2] = updates()
+    const towerB = variant(u0, 'tower-b.xer', (a) => ({ ...a, name: `Tower B ${a.name}` }), 'TOWER-B')
+    const g = sameProjectOnly([towerB, u2])
+    expect(g.kept.map((k) => k.name)).toEqual(['u2.xer'])
+    expect(g.dropped[0].reason).toMatch(/same ID numbering/)
+    expect(g.dropped[0].reason).toMatch(/A1000 is "Tower B Notice to proceed" here and "Notice to proceed" there/)
+  })
+
+  it('drops a template copy whose recorded work is different', () => {
+    const [u0, , u2] = updates()
+    const shifted = variant(u0, 'template-copy.xer', (a) => (a.actualStart === null ? a : { ...a, actualStart: a.actualStart + 14 * DAY_MS }))
+    const g = sameProjectOnly([shifted, u2])
+    expect(g.dropped[0].reason).toMatch(/actual start dates/)
+  })
+
+  it('keeps an update saved under a new project ID, with a warning', () => {
+    const [u0, , u2] = updates()
+    const copy = variant(u0, 'copy.xer', (a) => a, 'MIDRISE-42-U01')
+    const g = sameProjectOnly([copy, u2])
+    expect(g.dropped).toEqual([])
+    expect(g.kept[0].warnings[0]).toMatch(/project ID \(MIDRISE-42-U01\) differs/)
+  })
+
+  it('tolerates small renames and corrected dates', () => {
+    const [u0, , u2] = updates()
+    let renamed = 0
+    const edited = variant(u0, 'edited.xer', (a) => (renamed++ < 3 ? { ...a, name: `${a.name.toUpperCase()}!` } : a))
+    expect(sameProjectOnly([edited, u2]).dropped).toEqual([])
   })
 })
 

@@ -43,12 +43,7 @@ function loadAll(files: { name: string; text: string }[]) {
     }
   }
   const { kept, dropped } = sameProjectOnly(loaded)
-  for (const d of dropped) {
-    rejected.push({
-      name: d.name,
-      reason: `Only ${d.matchPct}% of its activity IDs appear in the latest update, so it looks like a different project and wasn't compared`,
-    })
-  }
+  rejected.push(...dropped)
   return { ok: kept, rejected }
 }
 
