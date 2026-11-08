@@ -1,4 +1,5 @@
 import type { Analysis } from './lib/metrics.ts'
+import type { FloatBucket } from './lib/checks.ts'
 import { fmtDate } from './lib/summary.ts'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -92,6 +93,45 @@ export function FinishTrend({ a }: { a: Analysis }) {
           <text x={x(i)} y={H - 16} className="axis" textAnchor="middle">{fmtDate(m.dataDate)}</text>
         </g>
       ))}
+    </svg>
+  )
+}
+
+const BAR_CLASS: Record<string, string> = { negative: 'bar bar-neg', high: 'bar bar-high' }
+
+function topRounded(x: number, y: number, w: number, h: number): string {
+  const r = Math.min(4, h, w / 2)
+  return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`
+}
+
+export function FloatChart({ buckets }: { buckets: FloatBucket[] }) {
+  const W = 340
+  const H = 220
+  const pad = { l: 8, r: 8, t: 26, b: 54 }
+  const max = Math.max(1, ...buckets.map((b) => b.count))
+  const step = (W - pad.l - pad.r) / buckets.length
+  const barW = step * 0.62
+  const base = H - pad.b
+  const y = (n: number) => base - (n / max) * (base - pad.t)
+  const summary = buckets.map((b) => `${b.label} days: ${b.count}`).join(', ')
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="chart floatchart" role="img" aria-label={`Open activities by total float. ${summary}`}>
+      {buckets.map((b, i) => {
+        const x = pad.l + step * i + (step - barW) / 2
+        const top = y(b.count)
+        const tip = `${b.label} working days: ${b.count} open ${b.count === 1 ? 'activity' : 'activities'}`
+        return (
+          <g key={b.key} className="col">
+            <title>{tip}</title>
+            <rect x={pad.l + step * i} y={pad.t - 20} width={step} height={base - pad.t + 20} className="hit" />
+            {b.count > 0 && <path d={topRounded(x, top, barW, base - top)} className={BAR_CLASS[b.key] ?? 'bar'} />}
+            <text x={x + barW / 2} y={top - 6} className="count" textAnchor="middle">{b.count}</text>
+            <text x={x + barW / 2} y={base + 18} className="axis" textAnchor="middle">{b.label}</text>
+          </g>
+        )
+      })}
+      <line x1={pad.l} x2={W - pad.r} y1={base} y2={base} className="baseline" />
+      <text x={W / 2} y={H - 12} className="axis" textAnchor="middle">total float in working days (8-hour days)</text>
     </svg>
   )
 }

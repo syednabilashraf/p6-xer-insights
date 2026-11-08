@@ -66,3 +66,35 @@ footer { margin-top: 24px; font-size: 13px; color: #5c6775; }
 .notice { background: #eef5f3; border: 1px solid #cfe3de; color: #234a43; padding: 10px 14px; border-radius: 10px; margin-bottom: 12px; font-size: 14px; }
 .warnings { background: #fff8e6; border: 1px solid #f0d9a0; color: #6b4b00; padding: 10px 14px; border-radius: 10px; margin-bottom: 12px; font-size: 14px; }
 .warnings ul { margin: 6px 0 0; padding-left: 18px; }
+.tabs { display: flex; gap: 4px; margin: 0 0 18px; border-bottom: 1px solid #e1e6eb; }
+.tabs .tab { border: none; border-bottom: 3px solid transparent; border-radius: 0; background: none; padding: 8px 12px; font-weight: 600; color: #5c6775; margin-bottom: -1px; }
+.tabs .tab:hover { color: #0f6b5c; }
+.tabs .tab.active { color: #0f6b5c; border-bottom-color: #0f6b5c; }
+.filecard h2 { overflow-wrap: anywhere; margin-bottom: 4px; }
+.filecard > p.muted { margin: 0 0 6px; }
+.filecard h3 { font-size: 15px; margin: 18px 0 8px; }
+.checkgrid { grid-template-columns: 1fr 1fr; }
+@media (max-width: 900px) { .checkgrid { grid-template-columns: 1fr; } }
+.check { border-top: 1px solid #f0f2f4; padding: 10px 0; }
+.check:first-of-type { border-top: none; padding-top: 0; }
+.check-head { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
+.examples { margin: 4px 0 2px; padding-left: 18px; }
+.examples li { overflow-wrap: anywhere; }
+.bad-text { color: #b3261e; font-weight: 600; margin-top: 4px; }
+table.broken td { overflow-wrap: anywhere; }
+table.broken td:first-child, table.broken td:nth-child(2) { white-space: nowrap; }
+.chart .bar { fill: #0f6b5c; }
+.chart .bar-neg { fill: #d9534f; }
+.chart .bar-high { fill: #e3a008; }
+.chart .hit { fill: transparent; }
+.chart .col:hover .bar { opacity: 0.85; }
+.chart .count { font-size: 13px; font-weight: 600; fill: #1c2430; }
+.chart .baseline { stroke: #c9d1da; }
+.floatchart { max-width: 480px; display: block; }
+.floatchart .axis { font-size: 12px; }
+.floatchart .count { font-size: 14px; }
+@media (max-width: 420px) {
+  .page { padding: 20px 12px 40px; }
+  .card { padding: 14px 12px; }
+  th, td { padding: 6px 4px; }
+}

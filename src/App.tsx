@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { decodeXer } from './lib/xer.ts'
 import { loadXer, sameProjectOnly } from './lib/load.ts'
@@ -9,8 +9,13 @@ import { runCpm } from './lib/cpm.ts'
 import { buildSummary, fmtDate, llmPrompt, verifySummary } from './lib/summary.ts'
 import { circularSample, largeSchedule, midriseUpdates } from './lib/generate.ts'
 import { SCurve, FinishTrend } from './charts.tsx'
+import { CheckMode } from './CheckMode.tsx'
+import { PUBLIC_SAMPLES } from './lib/samples.ts'
 
 type Rejected = { name: string; reason: string }
+type Mode = 'compare' | 'check'
+
+const modeFromHash = (): Mode => (window.location.hash === '#check' ? 'check' : 'compare')
 
 const SAMPLE_FILES = [
   'midrise-update-1-2026-04-01.xer',
@@ -56,6 +61,62 @@ function timedLoad(files: { name: string; text: string }[]) {
 }
 
 export default function App() {
+  const [mode, setMode] = useState<Mode>(modeFromHash)
+  const [checkOpened, setCheckOpened] = useState(mode === 'check')
+
+  useEffect(() => {
+    const onHash = () => {
+      const next = modeFromHash()
+      setMode(next)
+      if (next === 'check') setCheckOpened(true)
+    }
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
+  function switchMode(next: Mode) {
+    setMode(next)
+    if (next === 'check') setCheckOpened(true)
+    const { pathname, search } = window.location
+    window.history.replaceState(null, '', next === 'check' ? '#check' : pathname + search)
+  }
+
+  return (
+    <div className="page">
+      <nav className="tabs" role="tablist" aria-label="Mode">
+        <button role="tab" aria-selected={mode === 'compare'} className={`tab${mode === 'compare' ? ' active' : ''}`} onClick={() => switchMode('compare')}>
+          Compare updates
+        </button>
+        <button role="tab" aria-selected={mode === 'check'} className={`tab${mode === 'check' ? ' active' : ''}`} onClick={() => switchMode('check')}>
+          Check files
+        </button>
+      </nav>
+      <div hidden={mode !== 'compare'}>
+        <CompareMode />
+      </div>
+      {checkOpened && (
+        <div hidden={mode !== 'check'}>
+          <CheckMode />
+        </div>
+      )}
+      <footer>
+        {mode === 'compare' ? (
+          'A sample by Syed Nabil Ashraf. The sample schedules are generated, not real project data.'
+        ) : (
+          <>
+            A sample by Syed Nabil Ashraf. The two public files are MIT-licensed test exports from{' '}
+            {PUBLIC_SAMPLES.map((s, i) => (
+              <span key={s.file}>{i ? ' and ' : ''}<a href={s.url} target="_blank" rel="noreferrer">{s.owner}</a></span>
+            ))}
+            ; the broken-rows file is generated.
+          </>
+        )}
+      </footer>
+    </div>
+  )
+}
+
+function CompareMode() {
   const [initial] = useState(() => timedLoad(sampleFiles()))
   const [loaded, setLoaded] = useState<Loaded[]>(initial.ok)
   const [rejected, setRejected] = useState<Rejected[]>([])
@@ -81,7 +142,7 @@ export default function App() {
   }
 
   return (
-    <div className="page">
+    <>
       <header className="top">
         <div>
           <h1>Schedule update review</h1>
@@ -126,11 +187,7 @@ export default function App() {
 
       {analysis && <Report a={analysis} loaded={loaded} parseMs={parseMs} />}
       <Benchmark />
-
-      <footer>
-        A sample by Syed Nabil Ashraf. The sample schedules are generated, not real project data.
-      </footer>
-    </div>
+    </>
   )
 }
 
