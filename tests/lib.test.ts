@@ -1,13 +1,17 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { parseXer, XerFormatError } from '../src/lib/xer.ts'
+import { decodeXer, parseXer, XerFormatError } from '../src/lib/xer.ts'
 import { loadXer, sameProjectOnly } from '../src/lib/load.ts'
 import type { Loaded } from '../src/lib/load.ts'
 import { DAY_MS } from '../src/lib/schedule.ts'
 import type { Activity } from '../src/lib/schedule.ts'
-import { CircularLogicError, runCpm } from '../src/lib/cpm.ts'
+import { CircularLogicError, runCpm, scheduleFloat } from '../src/lib/cpm.ts'
 import { analyse } from '../src/lib/metrics.ts'
 import { buildSummary, verifySummary } from '../src/lib/summary.ts'
-import { circularSample, largeSchedule, midriseUpdates } from '../src/lib/generate.ts'
+import { brokenRowsSample, circularSample, largeSchedule, midriseUpdates } from '../src/lib/generate.ts'
+import { floatBuckets, runChecks } from '../src/lib/checks.ts'
+import { checkFile, checkFiles } from '../src/lib/checkfile.ts'
+import type { FileCheck } from '../src/lib/checkfile.ts'
 
 const midrise = () => midriseUpdates().map((x, i) => loadXer(x, `update-${i + 1}.xer`).schedule)
 
@@ -185,5 +189,174 @@ describe('scale', () => {
     expect(result.metrics[0].activityCount).toBe(10000)
     console.log(`parse ${Math.round(t1 - t0)} ms, analyse ${Math.round(t2 - t1)} ms, cpm ${Math.round(t3 - t2)} ms`)
     expect(t3 - t0).toBeLessThan(3000)
+  })
+})
+
+const sampleText = (file: string) => {
+  const buf = readFileSync(new URL(`../public/samples/${file}`, import.meta.url))
+  return decodeXer(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength))
+}
+
+const okCheck = (r: FileCheck) => {
+  if (!r.ok) throw new Error(r.error)
+  return r
+}
+
+describe('broken rows', () => {
+  const text = [
+    'ERMHDR\t19.12\t2026-04-09',
+    '%T\tPROJECT', '%F\tproj_id\tproj_short_name\tlast_recalc_date', '%R\t1\tP\t2026-04-01 08:00',
+    '%T\tTASK',
+    '%F\ttask_id\tproj_id\ttask_code\ttask_name\ttask_type\tstatus_code\ttarget_drtn_hr_cnt\tremain_drtn_hr_cnt\ttotal_float_hr_cnt\tearly_start_date',
+    '%R\t1\t1\tA1\tFirst\tTT_Task\tTK_NotStart\t16\t16\t0\t2026-04-02 08:00',
+    '%R\t2\t1\tA2\tSecond\tTT_Task\tTK_NotStart\t8\t8\t0\t2026-04-03 08:00',
+    '%R\t3\t1\tA3\tShort',
+    '%R\t4\t1\tA4\tBad date\tTT_Task\tTK_NotStart\t8\t8\t0\t2026-13-01 08:00',
+    '%R\t5\t1\tA5\tBad duration\tTT_Task\tTK_NotStart\tabc\t8\t0\t',
+    '%R\t6\t1\tA6\tBad float\tTT_Task\tTK_NotStart\t8\t8\tlots\t',
+    '%R\t\t1\tA7\tNo id\tTT_Task\tTK_NotStart\t8\t8\t0\t',
+    '%R\t2\t1\tA8\tDuplicate id\tTT_Task\tTK_NotStart\t8\t8\t0\t',
+    '%R\t9\t1\tA1\tDuplicate code\tTT_Task\tTK_NotStart\t8\t8\t0\t',
+    '%R\t10\t1\t\tNo code\tTT_Task\tTK_NotStart\t8\t8\t0\t',
+    '%T\tTASKPRED', '%F\ttask_pred_id\ttask_id\tpred_task_id\tpred_type\tlag_hr_cnt',
+    '%R\t1\t2\t1\tPR_FS\t0',
+    '%R\t2\t4\t1\tPR_XX\t0',
+    '%R\t3\t5\t1\tPR_FS\t2d',
+    '%R\t4\t6\t999\tPR_FS\t0',
+    'stray text',
+    '%E',
+  ].join('\n')
+
+  it('lists each broken row with its line number and reason', () => {
+    const s = loadXer(text, 'broken.xer').schedule
+    const byLine = Object.fromEntries(s.broken.map((b) => [b.line, `${b.table}: ${b.reason}`]))
+    expect(Object.keys(byLine).map(Number)).toEqual([9, 10, 11, 12, 13, 14, 15, 16, 20, 21, 22, 23])
+    expect(byLine[9]).toMatch(/^TASK: short row: 4 values for 10 fields/)
+    expect(byLine[10]).toMatch(/early_start_date "2026-13-01 08:00" isn't a date/)
+    expect(byLine[11]).toMatch(/target_drtn_hr_cnt "abc" isn't a number \(read as 0\)/)
+    expect(byLine[12]).toMatch(/total_float_hr_cnt "lots" isn't a number \(read as blank\)/)
+    expect(byLine[13]).toMatch(/blank task_id; row skipped/)
+    expect(byLine[14]).toMatch(/duplicate task_id 2 \(first on line 8\); row skipped/)
+    expect(byLine[15]).toMatch(/duplicate task_code A1 \(also on line 7\)/)
+    expect(byLine[16]).toMatch(/blank task_code/)
+    expect(byLine[20]).toMatch(/^TASKPRED: unknown pred_type "PR_XX"/)
+    expect(byLine[21]).toMatch(/lag_hr_cnt "2d" isn't a number/)
+    expect(byLine[22]).toMatch(/pred_task_id 999 isn't an activity in this file/)
+    expect(byLine[23]).toMatch(/doesn't start with %T, %F, %R or %E/)
+  })
+
+  it('skips rows without a usable activity ID and keeps the rest', () => {
+    const s = loadXer(text, 'broken.xer').schedule
+    expect(s.activities.map((a) => a.code)).toEqual(['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A1', ''])
+    expect(s.activities.find((a) => a.code === 'A4')!.earlyStart).toBeNull()
+    expect(s.relationships).toHaveLength(3)
+  })
+
+  it("doesn't flag a trailing tab in the field list, bare relationship codes or a clean export", () => {
+    const trailing = [
+      'ERMHDR\t19.12\t2026-04-09',
+      '%T\tTASK', '%F\ttask_id\ttask_code\ttask_name\tremain_drtn_hr_cnt\t', '%R\t1\tA\tOne\t8', '%R\t2\tB\tTwo\t8\t',
+      '%T\tTASKPRED', '%F\ttask_pred_id\ttask_id\tpred_task_id\tpred_type\tlag_hr_cnt', '%R\t1\t2\t1\tSS\t0',
+    ].join('\n')
+    const s = loadXer(trailing, 'trailing.xer').schedule
+    expect(s.broken).toEqual([])
+    expect(s.relationships[0].type).toBe('SS')
+    for (const x of midriseUpdates()) expect(loadXer(x, 'midrise.xer').schedule.broken).toEqual([])
+  })
+
+  it('makes the generated sample trigger every reason without rejecting the file', () => {
+    const r = okCheck(checkFile(brokenRowsSample(), 'generated.xer'))
+    const reasons = r.loaded.schedule.broken.map((b) => b.reason).join('\n')
+    for (const re of [/short row/, /isn't a date/, /target_drtn_hr_cnt .* isn't a number/, /total_float_hr_cnt .* isn't a number/, /blank task_id/,
+      /duplicate task_id/, /duplicate task_code/, /unknown pred_type/, /lag_hr_cnt .* isn't a number/, /isn't an activity in this file/, /doesn't start with/]) {
+      expect(reasons).toMatch(re)
+    }
+    expect(r.floatSource).toBe('P6')
+    expect(r.missingLinks.extra!.count).toBe(1)
+    expect(r.negativeFloat.count).toBe(3)
+    expect(r.highFloat.count).toBe(2)
+  })
+})
+
+describe('checks', () => {
+  it('counts links to missing activities next to the missing-links check', () => {
+    const r = okCheck(checkFile(sampleText('generated-broken-rows.xer'), 'g.xer'))
+    expect(r.missingLinks.status).toBe('fail')
+    expect(r.missingLinks.extra!.examples[0]).toMatch(/^line \d+: missing activity 999 → B1180$/)
+    const s = r.loaded.schedule
+    expect(analyse([s]).metrics[0].checks.find((c) => c.key === 'logic')!.extra!.count).toBe(1)
+  })
+
+  it('uses computed float when the file has no stored float', () => {
+    const text = [
+      'ERMHDR\t19.12\t2026-04-09',
+      '%T\tPROJECT', '%F\tproj_id\tproj_short_name\tlast_recalc_date', '%R\t1\tP\t2026-04-01 08:00',
+      '%T\tTASK', '%F\ttask_id\tproj_id\ttask_code\ttask_name\ttask_type\tstatus_code\ttarget_drtn_hr_cnt\tremain_drtn_hr_cnt',
+      '%R\t1\t1\tS\tStart\tTT_Mile\tTK_NotStart\t0\t0',
+      '%R\t2\t1\tL\tLong task\tTT_Task\tTK_NotStart\t400\t400',
+      '%R\t3\t1\tB\tShort task\tTT_Task\tTK_NotStart\t8\t8',
+      '%R\t4\t1\tF\tFinish\tTT_FinMile\tTK_NotStart\t0\t0',
+      '%T\tTASKPRED', '%F\ttask_pred_id\ttask_id\tpred_task_id\tpred_type\tlag_hr_cnt',
+      '%R\t1\t2\t1\tPR_FS\t0', '%R\t2\t3\t1\tPR_FS\t0', '%R\t3\t4\t2\tPR_FS\t0', '%R\t4\t4\t3\tPR_FS\t0',
+    ].join('\n')
+    const s = loadXer(text, 'no-float.xer').schedule
+    const fl = scheduleFloat(s)
+    expect(fl.source).toBe('computed')
+    expect(fl.float.get('3')).toBe(392)
+    const high = runChecks(s, fl).find((c) => c.key === 'highfloat')!
+    expect(high.count).toBe(1)
+    expect(high.examples[0]).toBe('B Short task (49 days float)')
+    expect(high.detail).toMatch(/computed/)
+    expect(runChecks(s).find((c) => c.key === 'highfloat')!.count).toBe(1)
+    expect(floatBuckets(fl).map((b) => b.count)).toEqual([0, 3, 0, 0, 1])
+  })
+
+  it('keeps P6 stored float when the file has it', () => {
+    const s = loadXer(sampleText('aspose-testXer.xer'), 'aspose.xer').schedule
+    expect(scheduleFloat(s).source).toBe('P6')
+    expect(runChecks(s).find((c) => c.key === 'negfloat')!.detail).toMatch(/P6 stored total float/)
+  })
+})
+
+describe('check-files mode', () => {
+  const files = () => [
+    { name: 'aspose-testXer.xer', text: sampleText('aspose-testXer.xer') },
+    { name: 'groupdocs-sample.xer', text: sampleText('groupdocs-sample.xer') },
+  ]
+
+  it('checks two unrelated files separately instead of dropping one', () => {
+    const loaded = files().map((f) => loadXer(f.text, f.name))
+    expect(sameProjectOnly(loaded).dropped).toHaveLength(1)
+    const results = checkFiles(files())
+    expect(results.map((r) => [r.name, r.ok])).toEqual([['aspose-testXer.xer', true], ['groupdocs-sample.xer', true]])
+  })
+
+  it('gives the expected results for the two public files', () => {
+    const [aspose, groupdocs] = checkFiles(files()).map(okCheck)
+    const summary = (r: ReturnType<typeof okCheck>) => ({
+      broken: r.loaded.schedule.broken.length,
+      missing: r.missingLinks.count,
+      dangling: r.missingLinks.extra!.count,
+      negative: r.negativeFloat.count,
+      high: r.highFloat.count,
+      source: r.floatSource,
+      buckets: r.buckets.map((b) => b.count),
+    })
+    expect(summary(aspose)).toEqual({ broken: 0, missing: 4, dangling: 0, negative: 0, high: 5, source: 'P6', buckets: [0, 72, 3, 3, 5] })
+    expect(summary(groupdocs)).toEqual({ broken: 0, missing: 70, dangling: 0, negative: 0, high: 0, source: 'P6', buckets: [0, 70, 0, 0, 0] })
+  })
+
+  it('keeps the chart consistent with the float checks', () => {
+    for (const r of [...checkFiles(files()), checkFile(brokenRowsSample(), 'g.xer')].map(okCheck)) {
+      expect(r.buckets[0].count).toBe(r.negativeFloat.count)
+      expect(r.buckets[4].count).toBe(r.highFloat.count)
+      expect(r.buckets.reduce((n, b) => n + b.count, 0)).toBe(r.openCount)
+    }
+  })
+
+  it('reports a file it cannot read on its own card', () => {
+    const results = checkFiles([{ name: 'notes.txt', text: 'hello' }, ...files()])
+    expect(results[0]).toEqual({ name: 'notes.txt', ok: false, error: expect.stringMatching(/ERMHDR/) })
+    expect(results.slice(1).every((r) => r.ok)).toBe(true)
   })
 })

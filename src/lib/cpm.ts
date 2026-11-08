@@ -1,4 +1,4 @@
-import type { Activity, Relationship } from './schedule.ts'
+import type { Activity, Relationship, Schedule } from './schedule.ts'
 
 export type CpmTimes = { es: number; ef: number; ls: number; lf: number; tf: number }
 
@@ -147,4 +147,29 @@ export function runCpm(activities: Activity[], rels: Relationship[]): CpmResult 
     })
   }
   return { times, finishHours, order }
+}
+
+export type FloatSource = 'P6' | 'computed'
+
+export type ScheduleFloat = {
+  float: Map<string, number>
+  source: FloatSource
+  finishHours: number | null
+  missingStored: number
+}
+
+const MIN_STORED_FLOAT_SHARE = 0.9
+
+export function scheduleFloat(s: Schedule): ScheduleFloat {
+  const acts = s.activities.filter((a) => a.type !== 'wbs' && a.type !== 'loe')
+  const open = acts.filter((a) => a.status !== 'complete')
+  const stored = open.filter((a) => a.totalFloatHours !== null).length
+  const float = new Map<string, number>()
+  if (open.length > 0 && stored / open.length >= MIN_STORED_FLOAT_SHARE) {
+    for (const a of open) float.set(a.id, a.totalFloatHours ?? 0)
+    return { float, source: 'P6', finishHours: null, missingStored: open.length - stored }
+  }
+  const cpm = runCpm(acts, s.relationships)
+  for (const a of open) float.set(a.id, cpm.times.get(a.id)!.tf)
+  return { float, source: 'computed', finishHours: cpm.finishHours, missingStored: open.length - stored }
 }

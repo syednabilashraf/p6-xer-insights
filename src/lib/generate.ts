@@ -262,3 +262,79 @@ export function largeSchedule(activities: number, seed = 7): string {
   specs.push({ code: 'S99999', name: 'Finish', wbs: 'Milestones', days: 0, kind: 'finish', preds: specs.filter((s) => !hasSucc.has(s.code)).map((s) => ({ code: s.code })) })
   return updates('LARGE', specs, [], '2026-01-05', 1, 60)[0]
 }
+
+export function brokenRowsSample(): string {
+  const start = Date.UTC(2026, 2, 2)
+  const at = (day: number, hour = 8) => formatP6Date(start + day * DAY_MS + hour * 3600 * 1000)
+  const dataDay = 30
+  const h = (days: number) => String(days * HOURS_PER_DAY)
+  const task = (
+    id: string, wbs: string, code: string, name: string, type: string, status: string,
+    days: number, remDays: number, floatDays: number | null, startDay: number, cstr = '',
+  ): string[] => {
+    const done = status === 'TK_Complete'
+    const active = status === 'TK_Active'
+    const es = done || active ? startDay : Math.max(startDay, dataDay)
+    const ef = done ? startDay + days : Math.max(es, dataDay) + remDays
+    const fl = floatDays ?? 0
+    return [
+      id, '1', wbs, code, name, type, status, h(days), h(remDays),
+      done ? '100' : active ? String(Math.round(((days - remDays) / days) * 100)) : '0',
+      floatDays === null || done ? '' : h(floatDays),
+      at(startDay), at(startDay + days, 17), at(es), at(ef, 17),
+      done ? '' : at(es + fl), done ? '' : at(ef + fl, 17),
+      done || active ? at(startDay) : '', done ? at(startDay + days, 17) : '', cstr,
+    ]
+  }
+  const tasks: string[][] = [
+    task('100', '20', 'B1000', 'Notice to proceed', 'TT_Mile', 'TK_Complete', 0, 0, null, 0),
+    task('101', '20', 'B1010', 'Site survey', 'TT_Task', 'TK_Complete', 5, 0, null, 0),
+    task('102', '21', 'B1020', 'Demolition', 'TT_Task', 'TK_Active', 10, 5, -5, 25),
+    task('103', '21', 'B1030', 'Slab repairs', 'TT_Task', 'TK_NotStart', 10, 10, -5, 35),
+    task('104', '22', 'B1040', 'Racking install', 'TT_Task', 'TK_NotStart', 20, 20, 0, 45),
+    task('105', '22', 'B1050', 'Fire sprinkler upgrade', 'TT_Task', 'TK_NotStart', 15, 15, 3, 30),
+    task('106', '22', 'B1060', 'Dock doors', 'TT_Task', 'TK_NotStart', 5, 5, 50, 30),
+    task('107', '22', 'B1070', 'Exterior signage', 'TT_Task', 'TK_NotStart', 2, 2, 60, 30),
+    task('115', '22', 'B1160', 'Electrical upgrade', 'TT_Task', 'TK_NotStart', 10, 10, 2, 45),
+    task('116', '22', 'B1170', 'HVAC balancing', 'TT_Task', 'TK_NotStart', 5, 5, 15, 55),
+    task('117', '22', 'B1180', 'Final clean', 'TT_Task', 'TK_NotStart', 3, 3, 0, 70),
+    task('108', '22', 'B1080', 'Handover to tenant', 'TT_FinMile', 'TK_NotStart', 0, 0, -5, 75, 'CS_MFO'),
+    task('109', '21', 'B1090', 'Strip-out of old offices', 'TT_Task', 'TK_Complete', 5, 0, null, 5).slice(0, 7),
+    task('110', '22', 'B1100', 'Lighting retrofit', 'TT_Task', 'TK_NotStart', 8, 8, 7, 45),
+    task('111', '22', 'B1110', 'Office fit-out', 'TT_Task', 'TK_NotStart', 10, 10, 1, 45),
+    task('112', '22', 'B1120', 'IT cabling', 'TT_Task', 'TK_NotStart', 5, 5, 0, 55),
+    task('', '22', 'B1130', 'Security cameras', 'TT_Task', 'TK_NotStart', 3, 3, 4, 50),
+    task('104', '22', 'B1140', 'Racking load test', 'TT_Task', 'TK_NotStart', 2, 2, 0, 65),
+    task('113', '22', 'B1040', 'Racking install, phase 2', 'TT_Task', 'TK_NotStart', 10, 10, 0, 65),
+  ]
+  const byId = (id: string) => tasks.find((r) => r[0] === id)!
+  byId('110')[11] = '2026-02-30 08:00'
+  byId('110')[14] = 'next week'
+  byId('111')[7] = 'ten days'
+  byId('112')[10] = 'n/a'
+
+  let predId = 7000
+  const link = (pred: string, succ: string, type = 'PR_FS', lag = '0') => [String(predId++), succ, pred, '1', '1', type, lag]
+  const links = [
+    link('100', '101'), link('101', '102'), link('102', '103'), link('103', '104'), link('104', '113'),
+    link('113', '108'), link('102', '105', 'PR_SS', '16'), link('105', '110'), link('110', '108'),
+    link('101', '106'), link('106', '108'), link('101', '107'), link('103', '115'), link('115', '116'),
+    link('116', '117'), link('117', '108'), link('101', '111'), link('111', '112'), link('112', '108'),
+    link('104', '116', 'PR_XX'), link('105', '116', 'PR_FS', '1d'), link('999', '117'),
+  ]
+
+  return [
+    'ERMHDR\t19.12\t2026-11-07\tProject\tadmin\tgenerated\tdbxDatabaseNoName\tProject Management\tUSD',
+    table('PROJECT', ['proj_id', 'proj_short_name', 'plan_start_date', 'last_recalc_date', 'scd_end_date'], [
+      ['1', 'GENERATED-BROKEN-ROWS', at(0), at(dataDay), at(75, 17)],
+    ]),
+    table('PROJWBS', ['wbs_id', 'proj_id', 'wbs_short_name', 'wbs_name', 'parent_wbs_id'], [
+      ['20', '1', 'PRE', 'Preconstruction', ''],
+      ['21', '1', 'DEMO', 'Demolition and\nslab works', ''],
+      ['22', '1', 'FIT', 'Warehouse fit-out', ''],
+    ]),
+    table('TASK', TASK_FIELDS, tasks),
+    table('TASKPRED', ['task_pred_id', 'task_id', 'pred_task_id', 'proj_id', 'pred_proj_id', 'pred_type', 'lag_hr_cnt'], links),
+    '%E',
+  ].join('\n')
+}

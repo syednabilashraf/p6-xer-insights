@@ -2,7 +2,8 @@ import type { Activity, Schedule } from './schedule.ts'
 import { DAY_MS, HOURS_PER_DAY } from './schedule.ts'
 import type { CheckResult } from './checks.ts'
 import { runChecks } from './checks.ts'
-import { runCpm } from './cpm.ts'
+import type { FloatSource } from './cpm.ts'
+import { scheduleFloat } from './cpm.ts'
 
 export const NEAR_CRITICAL_HOURS = 10 * HOURS_PER_DAY
 
@@ -28,7 +29,7 @@ export type UpdateMetrics = {
   startsPlanned: number
   startsAchieved: number
   periodStart: number | null
-  floatSource: 'P6' | 'computed'
+  floatSource: FloatSource
   float: Map<string, number>
   critical: Activity[]
   checks: CheckResult[]
@@ -88,17 +89,9 @@ export function computeMetrics(s: Schedule, prev: Schedule | null): UpdateMetric
   const acts = s.activities.filter(isWork)
   const open = acts.filter((a) => a.status !== 'complete')
 
-  const p6Float = open.filter((a) => a.totalFloatHours !== null).length
-  const useP6 = open.length > 0 && p6Float / open.length >= 0.9
-  const float = new Map<string, number>()
-  let cpmFinish: number | null = null
-  if (useP6) {
-    for (const a of open) float.set(a.id, a.totalFloatHours ?? 0)
-  } else {
-    const cpm = runCpm(acts, s.relationships)
-    for (const a of open) float.set(a.id, cpm.times.get(a.id)!.tf)
-    cpmFinish = s.dataDate + (cpm.finishHours / HOURS_PER_DAY) * DAY_MS
-  }
+  const fl = scheduleFloat(s)
+  const float = fl.float
+  const cpmFinish = fl.finishHours === null ? null : s.dataDate + (fl.finishHours / HOURS_PER_DAY) * DAY_MS
 
   const critical = open
     .filter((a) => (float.get(a.id) ?? 0) <= 0)
@@ -144,10 +137,10 @@ export function computeMetrics(s: Schedule, prev: Schedule | null): UpdateMetric
     startsPlanned: startsDue.length,
     startsAchieved: startsDue.filter((a) => a.actualStart !== null).length,
     periodStart,
-    floatSource: useP6 ? 'P6' : 'computed',
+    floatSource: fl.source,
     float,
     critical,
-    checks: runChecks(s),
+    checks: runChecks(s, fl),
   }
 }
 
