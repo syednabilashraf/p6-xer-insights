@@ -10,7 +10,7 @@ import { analyse } from '../src/lib/metrics.ts'
 import { buildSummary, verifySummary } from '../src/lib/summary.ts'
 import { brokenRowsSample, circularSample, largeSchedule, midriseUpdates } from '../src/lib/generate.ts'
 import { floatBuckets, runChecks } from '../src/lib/checks.ts'
-import { checkFile, checkFiles } from '../src/lib/checkfile.ts'
+import { brokenRowText, checkFile, checkFiles } from '../src/lib/checkfile.ts'
 import type { FileCheck } from '../src/lib/checkfile.ts'
 
 const midrise = () => midriseUpdates().map((x, i) => loadXer(x, `update-${i + 1}.xer`).schedule)
@@ -245,6 +245,54 @@ describe('broken rows', () => {
     expect(byLine[23]).toMatch(/doesn't start with %T, %F, %R or %E/)
   })
 
+  it('ties each broken row to its activity, link or WBS', () => {
+    const s = loadXer(text.replace('stray text', 'stray text\n%R\t11'), 'broken.xer').schedule
+    const activity = Object.fromEntries(s.broken.map((b) => [b.line, b.activity]))
+    expect(activity).toEqual({
+      9: 'A3 Short',
+      10: 'A4 Bad date',
+      11: 'A5 Bad duration',
+      12: 'A6 Bad float',
+      13: 'A7 No id',
+      14: 'A8 Duplicate id',
+      15: 'A1 Duplicate code',
+      16: 'No code',
+      20: 'A1 → A4',
+      21: 'A1 → A5',
+      22: '999 (not in file) → A6',
+      23: '',
+      24: '',
+    })
+
+    const g = loadXer(brokenRowsSample(), 'generated.xer').schedule
+    const byLine = new Map(g.broken.map((b) => [b.line, b]))
+    expect(byLine.get(8)!.activity).toBe('DEMO Demolition and')
+    expect(byLine.get(9)!.activity).toBe('')
+    expect(byLine.get(26)!.activity).toBe('B1100 Lighting retrofit')
+    expect(byLine.get(53)!.activity).toBe('B1040 → B1170')
+    expect(byLine.get(55)!.activity).toBe('999 (not in file) → B1180')
+    expect(brokenRowText(byLine.get(26)!)).toBe(
+      `line 26 · TASK · B1100 Lighting retrofit · target_start_date "2026-02-30 08:00" isn't a date (read as blank); early_end_date "next week" isn't a date (read as blank)`,
+    )
+    expect(brokenRowText(byLine.get(9)!)).toMatch(/^line 9 · PROJWBS · — · doesn't start with/)
+  })
+
+  it('names both ends of a link, including blank ones and activities in another project', () => {
+    const multi = [
+      'ERMHDR\t19.12\t2026-04-09',
+      '%T\tPROJECT', '%F\tproj_id\tproj_short_name\tlast_recalc_date', '%R\t1\tP\t2026-04-01 08:00', '%R\t2\tQ\t2026-04-01 08:00',
+      '%T\tTASK', '%F\ttask_id\tproj_id\ttask_code\ttask_name',
+      '%R\t1\t1\tA1\tOne', '%R\t2\t2\tQ1\tOther project',
+      '%T\tTASKPRED', '%F\ttask_pred_id\ttask_id\tpred_task_id\tpred_type\tlag_hr_cnt',
+      '%R\t1\t2\t1\tPR_ZZ\t0',
+      '%R\t2\t1\t\tPR_FS\t0',
+      '%R\t3',
+      '%T\tTASKRSRC', '%F\ttaskrsrc_id\ttask_id\trsrc_id\ttarget_qty', '%R\t1\t1\t5\t1\t9',
+    ].join('\n')
+    const activity = Object.fromEntries(loadXer(multi, 'multi.xer').schedule.broken.map((b) => [b.line, b.activity]))
+    expect(activity).toEqual({ 12: 'A1 → Q1', 13: '(blank) → A1', 14: '', 17: 'A1 One' })
+  })
+
   it('skips rows without a usable activity ID and keeps the rest', () => {
     const s = loadXer(text, 'broken.xer').schedule
     expect(s.activities.map((a) => a.code)).toEqual(['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A1', ''])
@@ -282,7 +330,7 @@ describe('checks', () => {
   it('counts links to missing activities next to the missing-links check', () => {
     const r = okCheck(checkFile(sampleText('generated-broken-rows.xer'), 'g.xer'))
     expect(r.missingLinks.status).toBe('fail')
-    expect(r.missingLinks.extra!.examples[0]).toMatch(/^line \d+: missing activity 999 → B1180$/)
+    expect(r.missingLinks.extra!.examples[0]).toMatch(/^line \d+: 999 \(not in file\) → B1180$/)
     const s = r.loaded.schedule
     expect(analyse([s]).metrics[0].checks.find((c) => c.key === 'logic')!.extra!.count).toBe(1)
   })
@@ -351,7 +399,20 @@ describe('check-files mode', () => {
       expect(r.buckets[0].count).toBe(r.negativeFloat.count)
       expect(r.buckets[4].count).toBe(r.highFloat.count)
       expect(r.buckets.reduce((n, b) => n + b.count, 0)).toBe(r.openCount)
+      for (const b of r.buckets) expect(b.activities).toHaveLength(b.count)
+      expect(r.buckets[0].activities).toEqual(r.negativeFloat.examples)
+      expect(r.buckets[4].activities).toEqual(r.highFloat.examples)
     }
+  })
+
+  it('lists every activity behind each check and chart bar, most urgent first', () => {
+    const [, groupdocs] = checkFiles(files()).map(okCheck)
+    expect(groupdocs.missingLinks.examples).toHaveLength(70)
+    const g = okCheck(checkFile(brokenRowsSample(), 'g.xer'))
+    expect(g.negativeFloat.examples).toEqual(['B1020 Demolition (-5 days float)', 'B1030 Slab repairs (-5 days float)', 'B1080 Handover to tenant (-5 days float)'])
+    expect(g.buckets[4].activities).toEqual(['B1070 Exterior signage (60 days float)', 'B1060 Dock doors (50 days float)'])
+    expect(g.buckets[2].activities.map((x) => x.split(' ')[0])).toEqual(['B1110', 'B1160', 'B1050', 'B1100'])
+    expect(g.missingLinks.extra!.examples).toEqual(['line 55: 999 (not in file) → B1180'])
   })
 
   it('reports a file it cannot read on its own card', () => {

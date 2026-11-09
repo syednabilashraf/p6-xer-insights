@@ -32,7 +32,7 @@ export type Relationship = {
   lagHours: number
 }
 
-export type DanglingLink = { line: number; pred: string; succ: string; missing: string[] }
+export type DanglingLink = { line: number; pred: string; succ: string; missing: string[]; label: string }
 
 export type Schedule = {
   projectName: string
@@ -141,6 +141,22 @@ function valueChecker(xer: XerFile, table: string, date: (v: string) => number |
   }
 }
 
+function rowAt(xer: XerFile, table: string, line: number): XerRow | undefined {
+  const t = xer.tables.get(table)
+  if (!t) return undefined
+  let lo = 0
+  let hi = t.lines.length - 1
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1
+    if (t.lines[mid] === line) return t.rows[mid]
+    if (t.lines[mid] < line) lo = mid + 1
+    else hi = mid - 1
+  }
+  return undefined
+}
+
+const joined = (...parts: (string | undefined)[]) => parts.map((p) => (p ?? '').trim()).filter(Boolean).join(' ')
+
 function mergeBroken(list: BrokenRow[]): BrokenRow[] {
   const out: BrokenRow[] = []
   for (const b of [...list].sort((x, y) => x.line - y.line)) {
@@ -170,6 +186,7 @@ export function toSchedule(xer: XerFile): Schedule {
 
   const taskLines = lines(xer, 'TASK')
   const idLine = new Map<string, number>()
+  const taskRow = new Map<string, XerRow>()
   const codeLine = new Map<string, number>()
   const usable: XerRow[] = []
   const taskValues = valueChecker(xer, 'TASK', date, (f) => (f === 'total_float_hr_cnt' || f === 'free_float_hr_cnt' ? 'blank' : '0'))
@@ -185,7 +202,10 @@ export function toSchedule(xer: XerFile): Schedule {
     } else if (idLine.has(id)) {
       issues.push(`duplicate task_id ${id} (first on line ${idLine.get(id)}); row skipped`)
       skip = true
-    } else idLine.set(id, line)
+    } else {
+      idLine.set(id, line)
+      taskRow.set(id, t)
+    }
     if (!code) issues.push('blank task_code')
     else if (!skip) {
       const key = `${t.proj_id ?? ''}\u0000${code}`
@@ -235,6 +255,23 @@ export function toSchedule(xer: XerFile): Schedule {
     fileWarnings.push(`Unknown activity type, treated as a task: ${[...unknownTypes].slice(0, 5).join(', ')}.`)
   }
 
+  const end = (id: string | undefined) => {
+    const v = (id ?? '').trim()
+    if (!v) return '(blank)'
+    const t = taskRow.get(v)
+    return t ? (t.task_code ?? '').trim() || v : `${v} (not in file)`
+  }
+  const link = (r: XerRow) => (isBlank(r.pred_task_id) && isBlank(r.task_id) ? '' : `${end(r.pred_task_id)} → ${end(r.task_id)}`)
+  const activityOf = (table: string, row: XerRow | undefined): string => {
+    if (!row) return ''
+    if (table === 'TASK') return joined(row.task_code, row.task_name)
+    if (table === 'TASKPRED') return link(row)
+    if (table === 'PROJWBS') return joined(row.wbs_short_name, row.wbs_name)
+    if (table === 'PROJECT') return joined(row.proj_short_name)
+    const t = isBlank(row.task_id) ? undefined : taskRow.get(row.task_id.trim())
+    return t ? joined(t.task_code, t.task_name) : ''
+  }
+
   const ids = new Set(activities.map((a) => a.id))
   const inFile = new Set(idLine.keys())
   const codeOf = new Map(activities.map((a) => [a.id, a.code]))
@@ -259,7 +296,7 @@ export function toSchedule(xer: XerFile): Schedule {
     if (issues.length) broken.push({ line, table: 'TASKPRED', reason: issues.join('; ') })
 
     if (missing.length) {
-      danglingLinks.push({ line, pred: r.pred_task_id, succ: r.task_id, missing })
+      danglingLinks.push({ line, pred: r.pred_task_id, succ: r.task_id, missing, label: link(r) })
       const other = codeOf.get(ids.has(r.task_id) ? r.task_id : r.pred_task_id)
       rowWarnings.push(`A relationship${other ? ` on ${other}` : ''} points to activity ${missing[0] || '(blank)'}, which isn't in this file; it was ignored.`)
       return
@@ -300,7 +337,7 @@ export function toSchedule(xer: XerFile): Schedule {
     relationships,
     warnings: [...fileWarnings, ...rowWarnings],
     fileWarnings,
-    broken: mergeBroken([...xer.broken, ...broken]),
+    broken: mergeBroken([...xer.broken, ...broken]).map((b) => ({ ...b, activity: activityOf(b.table, rowAt(xer, b.table, b.line)) })),
     danglingLinks,
   }
 }

@@ -7,7 +7,7 @@ export type XerTable = {
   lines: number[]
 }
 
-export type BrokenRow = { line: number; table: string; reason: string }
+export type BrokenRow = { line: number; table: string; reason: string; activity?: string }
 
 export type XerFile = {
   header: string[]

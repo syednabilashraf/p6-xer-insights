@@ -26,22 +26,15 @@ function pctStatus(count: number, total: number, limitPct: number): CheckStatus 
 }
 
 function codes(list: Activity[], note?: (a: Activity) => string): string[] {
-  return list.slice(0, 5).map((a) => `${a.code} ${a.name}${note ? ` (${note(a)})` : ''}`)
+  return list.map((a) => `${a.code} ${a.name}${note ? ` (${note(a)})` : ''}`)
 }
 
-function topBy(list: Activity[], score: (a: Activity) => number, k = 5): Activity[] {
-  const top: { a: Activity; s: number }[] = []
-  for (const a of list) {
-    const v = score(a)
-    if (top.length === k && v <= top[k - 1].s) continue
-    top.push({ a, s: v })
-    top.sort((x, y) => y.s - x.s)
-    if (top.length > k) top.pop()
-  }
-  return top.map((x) => x.a)
+function sortedBy(list: Activity[], score: (a: Activity) => number): Activity[] {
+  return list.map((a) => ({ a, s: score(a) })).sort((x, y) => y.s - x.s).map((x) => x.a)
 }
 
 const floatDays = (hours: number) => Math.round((hours / HOURS_PER_DAY) * 10) / 10
+const floatText = (hours: number) => `${floatDays(hours)} days float`
 
 export function runChecks(s: Schedule, fl: ScheduleFloat = scheduleFloat(s)): CheckResult[] {
   const work = s.activities.filter((a) => a.type !== 'wbs' && a.type !== 'loe')
@@ -49,7 +42,7 @@ export function runChecks(s: Schedule, fl: ScheduleFloat = scheduleFloat(s)): Ch
   const hasPred = new Set(s.relationships.map((r) => r.succ))
   const hasSucc = new Set(s.relationships.map((r) => r.pred))
   const floatOf = (a: Activity) => fl.float.get(a.id) ?? 0
-  const floatNote = (a: Activity) => `${floatDays(floatOf(a))} days float`
+  const floatNote = (a: Activity) => floatText(floatOf(a))
 
   const noPred = open.filter((a) => a.type !== 'start' && !hasPred.has(a.id))
   const noSucc = open.filter((a) => a.type !== 'finish' && !hasSucc.has(a.id))
@@ -59,8 +52,6 @@ export function runChecks(s: Schedule, fl: ScheduleFloat = scheduleFloat(s)): Ch
   const missingNote = (a: Activity) =>
     noPredIds.has(a.id) && noSuccIds.has(a.id) ? 'no links' : noPredIds.has(a.id) ? 'no predecessor' : 'no successor'
   const dangling = s.danglingLinks
-  const codeOf = new Map(dangling.length ? s.activities.map((a) => [a.id, a.code]) : [])
-  const label = (id: string) => codeOf.get(id) ?? (id ? `missing activity ${id}` : 'blank ID')
   const leads = s.relationships.filter((r) => r.lagHours < 0)
   const lags = s.relationships.filter((r) => r.lagHours > 0)
   const nonFs = s.relationships.filter((r) => r.type !== 'FS')
@@ -87,7 +78,7 @@ export function runChecks(s: Schedule, fl: ScheduleFloat = scheduleFloat(s)): Ch
       extra: {
         count: dangling.length,
         label: dangling.length === 1 ? "link points to an activity that isn't in the file" : "links point to activities that aren't in the file",
-        examples: dangling.slice(0, 5).map((d) => `line ${d.line}: ${label(d.pred)} → ${label(d.succ)}`),
+        examples: dangling.map((d) => `line ${d.line}: ${d.label}`),
       },
     },
     {
@@ -133,7 +124,7 @@ export function runChecks(s: Schedule, fl: ScheduleFloat = scheduleFloat(s)): Ch
       count: negFloat.length,
       total: open.length,
       status: negFloat.length ? 'fail' : 'pass',
-      examples: codes(topBy(negFloat, (a) => -floatOf(a)), floatNote),
+      examples: codes(sortedBy(negFloat, (a) => -floatOf(a)), floatNote),
     },
     {
       key: 'highfloat',
@@ -142,7 +133,7 @@ export function runChecks(s: Schedule, fl: ScheduleFloat = scheduleFloat(s)): Ch
       count: highFloat.length,
       total: open.length,
       status: pctStatus(highFloat.length, open.length, 5),
-      examples: codes(topBy(highFloat, floatOf), floatNote),
+      examples: codes(sortedBy(highFloat, floatOf), floatNote),
     },
     {
       key: 'duration',
@@ -165,20 +156,34 @@ export function runChecks(s: Schedule, fl: ScheduleFloat = scheduleFloat(s)): Ch
   ]
 }
 
-export type FloatBucket = { key: string; label: string; count: number }
+export type FloatBucket = { key: string; label: string; count: number; activities: string[] }
 
-export function floatBuckets(fl: ScheduleFloat): FloatBucket[] {
+export function floatBuckets(fl: ScheduleFloat, s?: Schedule): FloatBucket[] {
   const buckets: FloatBucket[] = [
-    { key: 'negative', label: '< 0', count: 0 },
-    { key: 'zero', label: '0', count: 0 },
-    { key: 'low', label: '1–10', count: 0 },
-    { key: 'mid', label: `11–${HIGH_FLOAT_DAYS}`, count: 0 },
-    { key: 'high', label: `> ${HIGH_FLOAT_DAYS}`, count: 0 },
+    { key: 'negative', label: '< 0', count: 0, activities: [] },
+    { key: 'zero', label: '0', count: 0, activities: [] },
+    { key: 'low', label: '1–10', count: 0, activities: [] },
+    { key: 'mid', label: `11–${HIGH_FLOAT_DAYS}`, count: 0, activities: [] },
+    { key: 'high', label: `> ${HIGH_FLOAT_DAYS}`, count: 0, activities: [] },
   ]
-  for (const hours of fl.float.values()) {
+  const members: [string, number][][] = buckets.map(() => [])
+  for (const [id, hours] of fl.float) {
     const d = hours / HOURS_PER_DAY
     const i = d < 0 ? 0 : d === 0 ? 1 : d <= 10 ? 2 : d <= HIGH_FLOAT_DAYS ? 3 : 4
     buckets[i].count++
+    if (s) members[i].push([id, hours])
+  }
+  if (s) {
+    const byId = new Map(s.activities.map((a) => [a.id, a]))
+    buckets.forEach((b, i) => {
+      const sign = b.key === 'high' ? -1 : 1
+      b.activities = members[i]
+        .sort((x, y) => sign * (x[1] - y[1]))
+        .map(([id, hours]) => {
+          const a = byId.get(id)!
+          return `${a.code} ${a.name} (${floatText(hours)})`
+        })
+    })
   }
   return buckets
 }

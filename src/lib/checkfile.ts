@@ -4,6 +4,7 @@ import type { CheckResult, FloatBucket } from './checks.ts'
 import { floatBuckets, runChecks } from './checks.ts'
 import type { FloatSource } from './cpm.ts'
 import { scheduleFloat } from './cpm.ts'
+import type { BrokenRow } from './xer.ts'
 
 export const MAX_CHECK_FILES = 10
 
@@ -23,6 +24,10 @@ export type FileCheck =
       ms: number
     }
 
+export function brokenRowText(b: BrokenRow): string {
+  return `line ${b.line} · ${b.table || '—'} · ${b.activity || '—'} · ${b.reason}`
+}
+
 export function checkFile(text: string, name: string): FileCheck {
   const t0 = performance.now()
   try {
@@ -40,7 +45,7 @@ export function checkFile(text: string, name: string): FileCheck {
       missingLinks: pick('logic'),
       negativeFloat: pick('negfloat'),
       highFloat: pick('highfloat'),
-      buckets: floatBuckets(fl),
+      buckets: floatBuckets(fl, loaded.schedule),
       ms: performance.now() - t0,
     }
   } catch (e) {

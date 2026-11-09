@@ -3,7 +3,9 @@ import { basename } from 'node:path'
 import { decodeXer } from '../src/lib/xer.ts'
 import { analyse } from '../src/lib/metrics.ts'
 import { buildSummary, fmtDate, verifySummary } from '../src/lib/summary.ts'
-import { checkFile } from '../src/lib/checkfile.ts'
+import { brokenRowText, checkFile } from '../src/lib/checkfile.ts'
+
+const MAX_BROKEN_PRINTED = 20
 
 for (const file of process.argv.slice(2)) {
   const name = basename(file)
@@ -18,7 +20,9 @@ for (const file of process.argv.slice(2)) {
   const summary = buildSummary(m, null, null)
   const v = verifySummary(summary.text, summary.facts)
   console.log(`OK   ${name}: ${s.activities.length} activities, ${s.relationships.length} links, data date ${fmtDate(m.dataDate)}, finish ${fmtDate(m.forecastFinish)} (planned ${m.plannedFinish ? fmtDate(m.plannedFinish) : 'n/a'}), critical ${m.criticalCount}, ${m.pctActual}% done, warnings ${r.loaded.warnings.length}, summary unknown=[${v.unknown.join(',')}]`)
-  console.log(`     broken rows: ${s.broken.length}${s.broken.slice(0, 5).map((b) => `\n       line ${b.line} ${b.table}: ${b.reason}`).join('')}`)
+  console.log(`     broken rows: ${s.broken.length}`)
+  for (const b of s.broken.slice(0, MAX_BROKEN_PRINTED)) console.log(`       ${brokenRowText(b)}`)
+  if (s.broken.length > MAX_BROKEN_PRINTED) console.log(`       and ${s.broken.length - MAX_BROKEN_PRINTED} more`)
   for (const c of [r.missingLinks, r.negativeFloat, r.highFloat]) {
     const extra = c.extra?.count ? ` + ${c.extra.count} ${c.extra.label}` : ''
     console.log(`     ${c.status.toUpperCase().padEnd(4)} ${c.label}: ${c.count} of ${c.total} open activities${extra}`)
