@@ -7,8 +7,6 @@ Small working tools for Primavera P6 `.xer` exports, in two tabs that share one 
 - **Check files**: load any number of `.xer` files (up to 10 at once). Each file gets its own card with the rows that couldn't be read cleanly, three schedule checks and a float chart.
 - **Compare updates**: load one to three monthly updates of the same project and see how the forecast finish, float and critical path moved.
 
-Everything runs in the browser, so the files never leave the user's computer.
-
 The checker builds on the parser and critical-path code from the P6 update-review demo I'd already shared (now the Compare updates tab), which is how it fit in the 2-hour limit. New for the checker: a line number on every row and the broken-row checks, counting links to missing activities in the missing-links check, giving the float checks the same float source as the metrics (before, files without stored float always passed them), the per-file Check files tab with its chart, the sample files, and tests for all of it.
 
 ![Check files](docs/check-files.png)

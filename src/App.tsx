@@ -148,7 +148,7 @@ function CompareMode() {
           <h1>Schedule update review</h1>
           <p className="lede">
             Upload one to three monthly Primavera P6 <code>.xer</code> updates. The parser and every number below are plain
-            TypeScript running in your browser, so the files never leave your computer. The summary at the end only uses
+            TypeScript running in your browser. The summary at the end only uses
             numbers the code computed.
           </p>
         </div>

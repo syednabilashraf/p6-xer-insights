@@ -127,7 +127,7 @@ export function CheckMode() {
         <p className="lede">
           Load one or more Primavera P6 <code>.xer</code> files. Each file gets its own card: the rows that couldn't be read
           cleanly (with their line numbers), three schedule checks (missing links, negative float, high float) and a chart of
-          total float. It runs in your browser, so the files never leave your computer.
+          total float.
         </p>
       </header>
 
