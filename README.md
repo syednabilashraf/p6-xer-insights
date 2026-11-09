@@ -15,11 +15,26 @@ The checker builds on the parser and critical-path code from the P6 update-revie
 
 ## Check files
 
-Open the **Check files** tab (or go to `/#check`). It loads the two public sample files below. **Show a file with broken rows** loads a generated file that triggers every broken-row reason, and **Upload .xer files** checks your own. Unrelated files are fine here: each one is checked on its own, so none of them is dropped. (The Compare updates tab still skips a file that isn't from the same project, because it compares updates.)
+Open the **Check files** tab (or go to `/#check`). It loads the two public sample files below. **Show a file with broken rows** loads a generated file that triggers every broken-row reason, and **Upload .xer files** (or dropping files anywhere on the tab) checks your own. Unrelated files are fine here: each one is checked on its own, so none of them is dropped. (The Compare updates tab still skips a file that isn't from the same project, because it compares updates.)
+
+Each card starts with a one-line verdict, for example `1 failed · 1 warning · 1 passed · 0 broken rows`.
 
 ### 1. Broken rows
 
-A table of line number, table and reason. A row with more than one problem gets one line listing all of them. The checker looks for:
+A table of line number, table, activity and reason. A row with more than one problem gets one line listing all of them. The first 10 rows are shown; **Show all** lists the rest (up to 500 on screen).
+
+The Activity column ties each row to something a scheduler recognises:
+
+| Table | Activity column |
+|---|---|
+| `TASK` | Activity ID and name, for example `B1100 Lighting retrofit` |
+| `TASKPRED` | The link as predecessor → successor activity IDs, for example `B1040 → B1170`. An end that isn't in the file reads `999 (not in file)`, a blank one `(blank)` |
+| `PROJWBS` | WBS code and name |
+| `PROJECT` | Project ID |
+| Other tables with a `task_id` | That activity's ID and name |
+| An untagged line, or a row too short to have an ID | — |
+
+The checker looks for:
 
 | Reason | What happens to the value |
 |---|---|
@@ -37,7 +52,7 @@ A table of line number, table and reason. A row with more than one problem gets 
 
 ### 2. Three checks
 
-All three look at open activities: not complete, and not WBS summaries or level-of-effort activities.
+All three look at open activities: not complete, and not WBS summaries or level-of-effort activities. The thresholds follow the DCMA 14-point schedule assessment: check 1 (logic: at most 5% of open activities missing a predecessor or successor), check 6 (high float: at most 5% with more than 44 working days) and check 7 (negative float: none). Two things are stricter than DCMA: a count above zero but within the 5% limit shows as a warning rather than a pass, and any link to an activity that isn't in the file fails the missing-links check.
 
 | Check | What it counts | Result |
 |---|---|---|
@@ -45,13 +60,13 @@ All three look at open activities: not complete, and not WBS summaries or level-
 | Negative float | Open activities with total float below 0 | Fail if there are any |
 | High float | Open activities with more than 44 working days (352 hours) of total float | Pass at 0; warn up to 5%; fail above 5% |
 
-Each check shows its count and up to three example activities (the most negative or highest float first).
+Each check shows its count, its share of the open activities and the first three activities (the most negative or highest float first). **Show all** lists the rest.
 
 **Float source.** The float checks use the same float as the update metrics. When at least 90% of the open activities have P6's stored total float (`total_float_hr_cnt`), which is normal for a scheduled export, that is used, and any open activity without it counts as 0. Otherwise the built-in critical-path calculation computes float from durations and links. That calculation uses 8-hour days and ignores calendars and constraints, so computed float is never negative. Each card says which source it used.
 
 ### 3. Chart
 
-One bar chart per file: open activities by total float in working days, in the buckets < 0, 0, 1–10, 11–44 and > 44. Part days go in the bucket above (0.5 days counts under 1–10). The < 0 bar always equals the negative-float count and the > 44 bar the high-float count.
+One bar chart per file: open activities by total float in working days, in the buckets < 0, 0, 1–10, 11–44 and > 44. Part days go in the bucket above (0.5 days counts under 1–10). The < 0 bar always equals the negative-float count and the > 44 bar the high-float count. Clicking a bar (or pressing Enter on it) lists the activities in that range with their float.
 
 ### Sample files
 
@@ -63,7 +78,7 @@ One bar chart per file: open activities by total float in working days, in the b
 
 Both public files are included unchanged; their full license texts are in [`public/samples/THIRD-PARTY-LICENSES.txt`](public/samples/THIRD-PARTY-LICENSES.txt). Neither has negative float, so 0 is the real result for both. The generated file's float values are made up so those checks have something to flag.
 
-`npm run check -- <files>` prints the same results for any `.xer` files from the command line.
+`npm run check -- <files>` prints the same results for any `.xer` files from the command line, with each broken row as `line 26 · TASK · B1100 Lighting retrofit · <reason>` (the first 20 per file).
 
 ## Compare updates
 
@@ -83,7 +98,7 @@ Upload one to three monthly updates and it:
 | File | What it does |
 |---|---|
 | `src/lib/xer.ts` | Parses the `%T` / `%F` / `%R` table format, keeps each row's line number, flags short rows and untagged lines; rejects files that aren't P6 exports |
-| `src/lib/schedule.ts` | Maps `PROJECT`, `PROJWBS`, `TASK` and `TASKPRED` rows to activities and relationships, and flags the other broken-row reasons |
+| `src/lib/schedule.ts` | Maps `PROJECT`, `PROJWBS`, `TASK` and `TASKPRED` rows to activities and relationships, flags the other broken-row reasons and ties each broken row to its activity, link or WBS |
 | `src/lib/load.ts` | Validates a file, including loop detection, before anything is calculated |
 | `src/lib/cpm.ts` | Forward and backward pass with FS, SS, FF and SF links and lags, and the float source rule shared by the checks and the metrics |
 | `src/lib/checks.ts` | Schedule quality checks and the float buckets for the chart |
@@ -98,8 +113,8 @@ Measured on a MacBook with Node 24 (`npm run samples`, median of 5 runs):
 
 | Activities | Links | Read and validate | Metrics | Full critical-path calculation |
 |---|---|---|---|---|
-| 10,000 | 13,681 | 50 ms | 13 ms | 15 ms |
-| 50,000 | 68,319 | 248 ms | 61 ms | 75 ms |
+| 10,000 | 13,681 | 51 ms | 14 ms | 15 ms |
+| 50,000 | 68,319 | 241 ms | 70 ms | 69 ms |
 
 The Compare updates tab has buttons that run the same test in the browser.
 

@@ -1,3 +1,4 @@
+import type { KeyboardEvent } from 'react'
 import type { Analysis } from './lib/metrics.ts'
 import type { FloatBucket } from './lib/checks.ts'
 import { fmtDate } from './lib/summary.ts'
@@ -104,7 +105,7 @@ function topRounded(x: number, y: number, w: number, h: number): string {
   return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`
 }
 
-export function FloatChart({ buckets }: { buckets: FloatBucket[] }) {
+export function FloatChart({ buckets, selected = null, onSelect }: { buckets: FloatBucket[]; selected?: string | null; onSelect?: (key: string) => void }) {
   const W = 340
   const H = 220
   const pad = { l: 8, r: 8, t: 26, b: 54 }
@@ -115,15 +116,31 @@ export function FloatChart({ buckets }: { buckets: FloatBucket[] }) {
   const y = (n: number) => base - (n / max) * (base - pad.t)
   const summary = buckets.map((b) => `${b.label} days: ${b.count}`).join(', ')
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="chart floatchart" role="img" aria-label={`Open activities by total float. ${summary}`}>
+    <svg viewBox={`0 0 ${W} ${H}`} className={`chart floatchart${selected ? ' has-selection' : ''}`} role="group" aria-label={`Open activities by total float. ${summary}`}>
       {buckets.map((b, i) => {
         const x = pad.l + step * i + (step - barW) / 2
         const top = y(b.count)
         const tip = `${b.label} working days: ${b.count} open ${b.count === 1 ? 'activity' : 'activities'}`
+        const clickable = onSelect && b.count > 0
         return (
-          <g key={b.key} className="col">
-            <title>{tip}</title>
-            <rect x={pad.l + step * i} y={pad.t - 20} width={step} height={base - pad.t + 20} className="hit" />
+          <g
+            key={b.key}
+            className={`col${clickable ? ' clickable' : ''}${b.key === selected ? ' selected' : ''}`}
+            {...(clickable && {
+              role: 'button',
+              tabIndex: 0,
+              'aria-pressed': b.key === selected,
+              'aria-label': tip,
+              onClick: () => onSelect(b.key),
+              onKeyDown: (e: KeyboardEvent<SVGGElement>) => {
+                if (e.key !== 'Enter' && e.key !== ' ') return
+                e.preventDefault()
+                onSelect(b.key)
+              },
+            })}
+          >
+            <title>{clickable ? `${tip}. Click to list them.` : tip}</title>
+            <rect x={pad.l + step * i} y={pad.t - 20} width={step} height={base - pad.t + 20} rx={6} className="hit" />
             {b.count > 0 && <path d={topRounded(x, top, barW, base - top)} className={BAR_CLASS[b.key] ?? 'bar'} />}
             <text x={x + barW / 2} y={top - 6} className="count" textAnchor="middle">{b.count}</text>
             <text x={x + barW / 2} y={base + 18} className="axis" textAnchor="middle">{b.label}</text>
